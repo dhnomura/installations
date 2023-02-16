@@ -1,0 +1,22 @@
+
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: 'Cloud Formation to EC2 Instances to Install Oracle Database'
+################################################################################
+#                                  Resources                                   #
+################################################################################
+Resources:
+  #################################### S3 ####################################
+  S3Bucket:
+    Type: AWS::S3::Bucket
+################################################################################
+#                                   Outputs                                    #
+################################################################################
+
+Outputs:
+  outTestVPC:
+    Description: VPCArn
+    Value: !GetAtt S3Bucket.Arn
+    Export:
+      Name: S3BucketARN
+

@@ -1,0 +1,169 @@
+
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: 'Cloud Formation to EC2 Instances to Install Oracle Database'
+
+################################################################################
+#                                Parameters                                    #
+################################################################################
+Parameters:
+  VPCID:
+    Description: VPCID
+    Type: String
+  Subnet01:
+    Description: Subnet ID
+    Type: String
+  VPCIDR:
+    Description: VPC CIDR Range
+    Type: String
+  KeyPairName:
+    Description: Key Pair Name
+    Type: String
+
+################################################################################
+#                                  Mappings                                    #
+################################################################################
+Mappings:
+  LinuxEC2:
+    sa-east-1:
+      HVM64: ami-0102667d2046392a0
+
+################################################################################
+#                                  Resources                                   #
+################################################################################
+Resources:
+
+  #################################### SG ######################################
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Oracle instances security group"
+      GroupName: SGOracle
+      VpcId: !Ref VPCID
+      SecurityGroupIngress: 
+        - CidrIp: !Ref VPCIDR
+          FromPort: 443
+          IpProtocol: "tcp"
+          ToPort: 443
+        - CidrIp: !Ref VPCIDR
+          FromPort: 1521
+          IpProtocol: "tcp"
+          ToPort: 1521
+
+  ################################### EC2 ####################################
+  EC2Linux:
+    Type: AWS::EC2::Instance
+    Properties:
+      IamInstanceProfile: !Ref EC2ServerInstanceProfile
+      InstanceType: t3.large
+      KeyName: !Ref KeyPairName
+      # SubnetId: {'Fn::ImportValue':  "VPC-outTestPubSubnet01"}
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          GroupSet: 
+            - !GetAtt EC2SecurityGroup.GroupId
+          # SubnetId: {'Fn::ImportValue':  "VPC-outTestPubSubnet01"}  
+          SubnetId: !Ref Subnet01
+            # Ref: "PublicSubnet"
+      ImageId: !FindInMap
+        - LinuxEC2
+        - !Ref "AWS::Region"
+        - HVM64
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 300
+      UserData:
+        'Fn::Base64':
+          !Sub |
+            #!/bin/bash
+            yum update -y
+            yum install unzip
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
+            yum install binutils -y
+            yum install compat-libcap1 -y
+            yum install compat-libstdc++-33 -y
+            yum install compat-libstdc++-33.i686 -y
+            yum install glibc -y
+            yum install glibc.i686 -y
+            yum install glibc-devel -y
+            yum install glibc-devel.i686 -y
+            yum install ksh -y
+            yum install libaio -y
+            yum install libaio.i686 -y
+            yum install libaio-devel -y
+            yum install libaio-devel.i686 -y
+            yum install libX11 -y
+            yum install libX11.i686 -y
+            yum install libXau -y
+            yum install libXau.i686 -y
+            yum install libXi -y
+            yum install libXi.i686 -y
+            yum install libXtst -y
+            yum install libXtst.i686 -y
+            yum install libgcc -y
+            yum install libgcc.i686 -y
+            yum install libstdc++ -y
+            yum install libstdc++.i686 -y
+            yum install libstdc++-devel -y
+            yum install libstdc++-devel.i686 -y
+            yum install libxcb -y
+            yum install libxcb.i686 -y
+            yum install make -y
+            yum install nfs-utils -y
+            yum install net-tools -y
+            yum install smartmontools -y
+            yum install sysstat -y
+            yum install unixODBC -y
+            yum install unixODBC-devel -y
+            groupadd -g 54321 oinstall
+            groupadd -g 54322 dba
+            groupadd -g 54323 oper
+            useradd -u 54321 -g oinstall -G dba,oper oracle
+            mkdir -p /u01/app/oracle/product/12.2.0.1/db_1
+            chown -R oracle:oinstall /u01
+            chmod -R 775 /u01
+            
+  ################################### IAM ####################################
+  SSMIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: 'S3-Access'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action: 
+                  - s3:ListAllMyBuckets
+                Resource: '*'
+              - Effect: 'Allow'
+                Action:
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                  - s3:GetBucketACL
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: 
+                  - Fn::ImportValue: S3BucketARN
+                  # - !GetAtt S3Bucket.Arn
+
+  EC2ServerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref SSMIAMRole
