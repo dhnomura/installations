@@ -1,0 +1,285 @@
+################################################################################
+#                                Parameters                                    #
+################################################################################
+Parameters:
+
+  ProjectName:
+    Type: String
+
+  Owner:
+    Type: String   
+
+################################################################################
+#                                 Conditions                                   #
+################################################################################
+Conditions: {}
+
+################################################################################
+#                                  Mappings                                    #
+################################################################################
+# Mappings:
+
+################################################################################
+#                                  Resources                                   #
+################################################################################
+Resources:
+  ################################### VPC ######################################
+  TestVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.1.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+  TestPubSubnet01:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: 10.1.0.0/19
+      AvailabilityZone:
+        Fn::Select:
+        - '0'
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      VpcId:
+        Ref: TestVPC
+      Tags:
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Project
+          Value: !Ref ProjectName
+  TestPubSubnet02:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: 10.1.32.0/19
+      AvailabilityZone:
+        Fn::Select:
+        - '1'
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      VpcId:
+        Ref: TestVPC
+      Tags:
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Project
+          Value: !Ref ProjectName
+  TestPrivSubnet01:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: 10.1.96.0/19
+      AvailabilityZone:
+        Fn::Select:
+        - '0'
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      VpcId:
+        Ref: TestVPC
+      Tags:
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Project
+          Value: !Ref ProjectName
+  TestPrivSubnet02:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: 10.1.128.0/19
+      AvailabilityZone:
+        Fn::Select:
+        - '1'
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      VpcId:
+        Ref: TestVPC
+      Tags:
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Project
+          Value: !Ref ProjectName
+  myInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Project
+          Value: !Ref ProjectName
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref TestVPC
+      InternetGatewayId: !Ref myInternetGateway
+
+  # Create public routes table for VPC
+  myPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref TestVPC
+      Tags:
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Create a route for the table which will forward the traffic
+  # from the gateway
+  myDefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref myPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref myInternetGateway
+
+  # Associate route table (which contains default route) to newly created subnet
+  myPublic01RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref myPublicRouteTable
+      SubnetId: !Ref TestPubSubnet01
+
+  myPublic02RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref myPublicRouteTable
+      SubnetId: !Ref TestPubSubnet02
+
+  myPriv01RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref myPriv01RouteTable
+      SubnetId: !Ref TestPrivSubnet01
+
+  myPriv02RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref myPriv02RouteTable
+      SubnetId: !Ref TestPrivSubnet02
+
+  Priv01NAT:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+        - EIP01
+        - AllocationId
+      SubnetId:
+        Ref: TestPubSubnet01
+      Tags:
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Project
+          Value: !Ref ProjectName   
+  Priv02NAT:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+        - EIP02
+        - AllocationId
+      SubnetId:
+        Ref: TestPubSubnet02
+      Tags:
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Project
+          Value: !Ref ProjectName      
+  EIP01:
+    DependsOn: AttachGateway
+    Type: AWS::EC2::EIP
+    Properties:
+        Domain: vpc
+  EIP02:
+    DependsOn: AttachGateway
+    Type: AWS::EC2::EIP
+    Properties:
+        Domain: vpc
+  
+  myPriv01RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref TestVPC
+      Tags:
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Project
+          Value: !Ref ProjectName
+  myPriv02RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref TestVPC
+      Tags:
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Project
+          Value: !Ref ProjectName
+  PrivRoute01:
+    Type: AWS::EC2::Route
+    Properties:
+        RouteTableId:
+          Ref: myPriv01RouteTable
+        DestinationCidrBlock: 0.0.0.0/0
+        NatGatewayId:
+          Ref: Priv01NAT
+  PrivRoute02:
+    Type: AWS::EC2::Route
+    Properties:
+        RouteTableId:
+          Ref: myPriv02RouteTable
+        DestinationCidrBlock: 0.0.0.0/0
+        NatGatewayId:
+          Ref: Priv02NAT
+
+
+
+
+################################################################################
+#                                   Outputs                                    #
+################################################################################
+Outputs:
+  outTestVPC:
+    Description: VPCArn
+    Value: !Ref TestVPC
+    Export:
+      Name: 
+        'Fn::Sub': '${ProjectName}-TestVPC'
+  outTestPubSubnet01:
+    Description: Public Subnet 01 ARN
+    Value: !Ref TestPubSubnet01
+    Export:
+      Name:
+        'Fn::Sub': '${ProjectName}-outTestPubSubnet01'
+  outTestPubSubnet02:
+    Description: Public Subnet 02 ARN
+    Value: !Ref TestPubSubnet02
+    Export:
+      Name:
+        'Fn::Sub': '${ProjectName}-outTestPubSubnet02'
+  outTestPrivSubnet01:
+    Description: Priv Subnet 01 ARN
+    Value: !Ref TestPrivSubnet01
+    Export:
+      Name:
+        'Fn::Sub': '${ProjectName}-outTestPrivSubnet01'
+  outTestPrivSubnet02:
+    Description: Priv Subnet 02 ARN
+    Value: !Ref TestPrivSubnet02
+    Export: 
+      Name:
+        'Fn::Sub': '${ProjectName}-outTestPrivSubnet02'
+  outmyPublicRouteTable:
+    Description: Pub Subnet route table ARN
+    Value: !Ref myPublicRouteTable
+    Export:
+      Name:
+        'Fn::Sub': '${ProjectName}-outmyPublicRouteTable'
+  outmyPriv01RouteTable:
+    Description: Pub Subnet route table ARN
+    Value: !Ref myPriv01RouteTable
+    Export:
+      Name:
+        'Fn::Sub': '${ProjectName}-outmyPriv01RouteTable'
+  outmyPriv02RouteTable:
+    Description: Pub Subnet route table ARN
+    Value: !Ref myPriv02RouteTable
+    Export:
+      Name:
+        'Fn::Sub': '${ProjectName}-outmyPriv02RouteTable'
